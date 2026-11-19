@@ -1,56 +1,55 @@
 /**
   * @file    arm_motor.c
-  * @brief   一条 FDCAN 总线上的多电机管理层实现.
-  *
-  * 设计要点:
-  *   - 单台函数都接收 bus + index, 不使用全局单例, 因此可以被循环复用.
-  *   - 总线级操作(过滤器/Start)只在 Init 里做一次.
-  *   - 接收按 master_id 查表分发, dm_motor 只负责解码编码.
-  *   - 失败时回滚: 任何一台初始化失败, 尝试失能已使能的电机.
+  * @brief   一条 FDCAN 总线上的多电机管理.
   */
 
 #include "arm_motor.h"
 #include "fdcan_bsp.h"
 
-/* -------------------------------------------------------------------------
- * 内部工具
- * ---------------------------------------------------------------------- */
-
 /* 通用发送: 与电机数量无关, 目标 ID 已经在 frame 里. */
 static bool ArmMotor_Send(FDCAN_HandleTypeDef *hcan, const dm_frame_t *frame)
 {
-    if ((hcan == NULL) || (frame == NULL))
-    {
-        return false;
-    }
-
     return FDCAN_SendStd(hcan, frame->id, frame->data, frame->len) == HAL_OK;
 }
 
-/**
-  * @brief 单台初始化: 建实例 -> 失能 -> 切模式 -> 重建实例 -> 使能.
-  * @note  调用前总线必须已经 Start.
-  * @note  7 台逐台初始化约需 7 x 50 ms, 属正常的上电耗时.
-  */
+/* 当前模式未知, 三种模式的失能帧都发一遍. */
+static void ArmMotor_DisableAnyMode(ArmMotorBus_t *bus, const dm_motor_config_t *cfg)
+{
+    static const DM_MOTOR_MODE modes[3] = {
+        DM_MOTOR_MODE_MIT, DM_MOTOR_MODE_POSITION_VELOCITY, DM_MOTOR_MODE_VELOCITY,
+    };
+    dm_motor_config_t mode_cfg = *cfg;
+    dm_motor_t tmp;
+    dm_frame_t frame;
+
+    for (uint8_t i = 0U; i < 3U; i++)
+    {
+        mode_cfg.mode = modes[i];
+
+        if ((dm_motor_init(&tmp, &mode_cfg) == DM_OK) &&
+            (dm_motor_cmd_disable(&tmp, &frame) == DM_OK))
+        {
+            (void)ArmMotor_Send(bus->hcan, &frame);
+        }
+    }
+}
+
+/* 建实例 -> 失能 -> 切模式 -> 重建实例 -> 使能. */
 static bool ArmMotor_InitOne(ArmMotorBus_t *bus, uint8_t index)
 {
     dm_frame_t frame;
     ArmJoint_t *joint = &bus->joint[index];
     const dm_motor_config_t *cfg = &bus->cfg[index];
 
-    joint->state  = ARM_JOINT_DISABLED;
-    joint->q_zero = 0.0f;
+    joint->state = ARM_JOINT_DISABLED;
 
     if (dm_motor_init(&joint->drv, cfg) != DM_OK)
     {
         return false;
     }
 
-    /* 切模式前先失能. 失败不致命, 继续尝试切模式. */
-    if (dm_motor_cmd_disable(&joint->drv, &frame) == DM_OK)
-    {
-        (void)ArmMotor_Send(bus->hcan, &frame);
-    }
+    /* 切模式前先失能; 当前模式未知, 三路都发. */
+    ArmMotor_DisableAnyMode(bus, cfg);
 
     if (dm_motor_change_mode(cfg->device_id, cfg->mode, &frame) != DM_OK)
     {
@@ -75,7 +74,7 @@ static bool ArmMotor_InitOne(ArmMotorBus_t *bus, uint8_t index)
 }
 
 /* -------------------------------------------------------------------------
- * 初始化
+ * 初始化 校验-建实例-建master_id-index分发表-启动总线-逐台初始化-失败回滚
  * ---------------------------------------------------------------------- */
 
 bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hcan,
@@ -84,10 +83,10 @@ bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hcan,
     if ((bus == NULL) || (hcan == NULL) || (cfgs == NULL) ||
         (count == 0U) || (count > ARM_MOTOR_MAX_COUNT))
     {
-        return false;
+        return false;//API检查，防joint数越界
     }
 
-    *bus       = (ArmMotorBus_t){0};
+    *bus       = (ArmMotorBus_t){0};//清零旧配置
     bus->hcan  = hcan;
     bus->cfg   = cfgs;
     bus->count = count;
@@ -100,21 +99,23 @@ bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hcan,
     /* 建分发表, 同时检查 device_id / master_id 是否重复. */
     for (uint8_t i = 0U; i < count; i++)
     {
-        if (cfgs[i].master_id >= ARM_MOTOR_RX_INDEX_SIZE)
+        if ((cfgs[i].device_id < DM_MOTOR_ID_MIN) ||
+            (cfgs[i].device_id > DM_MOTOR_ID_MAX) ||
+            (cfgs[i].master_id >= ARM_MOTOR_RX_INDEX_SIZE))
         { 
             return false;
         }
 
         if (bus->rx_index[cfgs[i].master_id] >= 0)
         {
-            return false; /* master_id 在总线上必须唯一 */
+            return false; /* master_id 在总线上唯一 */
         }
 
         for (uint8_t j = 0U; j < i; j++)
         {
             if (cfgs[j].device_id == cfgs[i].device_id)
             {
-                return false; /* device_id 重复会导致控制帧 ID 冲突 */
+                return false; /* device_id不与master_id重复 */
             }
         }
 
@@ -168,6 +169,7 @@ void ArmMotorBus_OnRx(ArmMotorBus_t *bus, uint32_t id,
     dm_motor_on_rx(&bus->joint[(uint8_t)index].drv, id, data, len, now_ms);
 }
 
+/*每个控制周期刷新离线状态，并推进关节状态机*/
 void ArmMotorBus_Update(ArmMotorBus_t *bus, uint32_t now_ms)
 {
     if ((bus == NULL) || (bus->count == 0U))
@@ -180,11 +182,7 @@ void ArmMotorBus_Update(ArmMotorBus_t *bus, uint32_t now_ms)
         ArmJoint_t *joint = &bus->joint[i];
         uint8_t status;
 
-        if (dm_motor_refresh_offline(&joint->drv, now_ms) != DM_OK)
-        {
-            joint->state = ARM_JOINT_FAULT;
-            continue;
-        }
+        (void)dm_motor_refresh_offline(&joint->drv, now_ms);
 
         if (joint->drv.offline)
         {
@@ -200,21 +198,20 @@ void ArmMotorBus_Update(ArmMotorBus_t *bus, uint32_t now_ms)
         }
         else if (status == DM_MOTOR_STATUS_ENABLED)
         {
-            if (joint->state == ARM_JOINT_ENABLING)
+            if (joint->state != ARM_JOINT_FAULT)
             {
                 joint->state = ARM_JOINT_READY;
             }
         }
         else if (status == DM_MOTOR_STATUS_DISABLED)
         {
-            if (joint->state == ARM_JOINT_READY)
+            if (joint->state != ARM_JOINT_FAULT)
             {
                 joint->state = ARM_JOINT_DISABLED;
             }
         }
         else
         {
-            /* 未知状态码, 保守处理 */
             joint->state = ARM_JOINT_FAULT;
         }
     }
@@ -240,36 +237,6 @@ bool ArmMotorBus_SetTargetOne(ArmMotorBus_t *bus, uint8_t index,
     }
 
     return ArmMotor_Send(bus->hcan, &frame);
-}
-
-bool ArmMotorBus_SetTargets(ArmMotorBus_t *bus,
-                            const dm_motor_cmd_t cmds[])
-{
-    bool ok = true;
-
-    if ((bus == NULL) || (cmds == NULL) || (bus->count == 0U))
-    {
-        return false;
-    }
-
-    /* 任意一台未就绪, 整组不下发, 避免单轴乱动. */
-    for (uint8_t i = 0U; i < bus->count; i++)
-    {
-        if (!ArmMotorBus_IsReady(bus, i))
-        {
-            return false;
-        }
-    }
-
-    for (uint8_t i = 0U; i < bus->count; i++)
-    {
-        if (!ArmMotorBus_SetTargetOne(bus, i, &cmds[i]))
-        {
-            ok = false;
-        }
-    }
-
-    return ok;
 }
 
 /* -------------------------------------------------------------------------
@@ -322,26 +289,6 @@ bool ArmMotorBus_DisableOne(ArmMotorBus_t *bus, uint8_t index)
     return true;
 }
 
-bool ArmMotorBus_EnableAll(ArmMotorBus_t *bus)
-{
-    bool ok = true;
-
-    if ((bus == NULL) || (bus->count == 0U))
-    {
-        return false;
-    }
-
-    for (uint8_t i = 0U; i < bus->count; i++)
-    {
-        if (!ArmMotorBus_EnableOne(bus, i))
-        {
-            ok = false;
-        }
-    }
-
-    return ok;
-}
-
 bool ArmMotorBus_DisableAll(ArmMotorBus_t *bus)
 {
     bool ok = true;
@@ -360,6 +307,29 @@ bool ArmMotorBus_DisableAll(ArmMotorBus_t *bus)
     }
 
     return ok;
+}
+
+bool ArmMotorBus_ClearFaultOne(ArmMotorBus_t *bus, uint8_t index)
+{
+    dm_frame_t frame;
+
+    if ((bus == NULL) || (index >= bus->count))
+    {
+        return false;
+    }
+
+    if (dm_motor_cmd_clear_error(&bus->joint[index].drv, &frame) != DM_OK)
+    {
+        return false;
+    }
+
+    if (!ArmMotor_Send(bus->hcan, &frame))
+    {
+        return false;
+    }
+
+    bus->joint[index].state = ARM_JOINT_DISABLED;
+    return true;
 }
 
 /* -------------------------------------------------------------------------
@@ -388,27 +358,17 @@ bool ArmMotorBus_IsReady(const ArmMotorBus_t *bus, uint8_t index)
 
     joint = &bus->joint[index];
 
-    return (joint->state == ARM_JOINT_READY) &&
-           (!joint->drv.offline) &&
-           (joint->drv.measurement.status_code == DM_MOTOR_STATUS_ENABLED);
+    return (joint->state == ARM_JOINT_READY);
 }
 
-bool ArmMotorBus_AllReady(const ArmMotorBus_t *bus)
+ArmJointState_t ArmMotorBus_GetState(const ArmMotorBus_t *bus, uint8_t index)
 {
-    if ((bus == NULL) || (bus->count == 0U))
+    if ((bus == NULL) || (index >= bus->count))
     {
-        return false;
+        return ARM_JOINT_FAULT;
     }
 
-    for (uint8_t i = 0U; i < bus->count; i++)
-    {
-        if (!ArmMotorBus_IsReady(bus, i))
-        {
-            return false;
-        }
-    }
-
-    return true;
+    return bus->joint[index].state;
 }
 
 bool ArmMotorBus_HasFault(const ArmMotorBus_t *bus)

@@ -91,8 +91,7 @@ extern "C" {
 #define DM_MOTOR_STATUS_FAULT_MAX 0xEU
 
 /** @brief 判断驱动器状态码是否表示故障. */
-#define DM_MOTOR_STATUS_IS_FAULT(status) \
-    (((status) >= DM_MOTOR_STATUS_FAULT_MIN) && ((status) <= DM_MOTOR_STATUS_FAULT_MAX))
+#define DM_MOTOR_STATUS_IS_FAULT(status)     (((status) >= DM_MOTOR_STATUS_FAULT_MIN) && ((status) <= DM_MOTOR_STATUS_FAULT_MAX))
 
 /**
   * @brief 达妙控制模式.
