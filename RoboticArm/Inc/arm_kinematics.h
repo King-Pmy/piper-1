@@ -38,6 +38,6 @@ void Arm_PosToMatrix(const ArmPos_t *pos,Matrix4x4 *T_out);
 /* 关节角 -> 位姿 (xyz + 欧拉角).
  * pose 和 T_out 都可以传 NULL: 只取位姿时 T_out 传 NULL,
  * 只取矩阵时 pose 传 NULL (ArmIK_Residual 用这种). */
-void Arm_ForwardKinematics(const float q_motor[6],ArmPos_t *pose,Matrix4x4 *T_out);
+void Arm_ForwardKinematics(const float q_link[6],ArmPos_t *pose,Matrix4x4 *T_out);
 
 #endif

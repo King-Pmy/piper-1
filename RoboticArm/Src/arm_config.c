@@ -23,14 +23,14 @@ const dm_motor_config_t arm_motor_configs[ARM_DOF] = {
         .invert_direction     = false               /* 反装设 true */
     },
     /* 关节2 - 肩部俯仰 */
-    { .device_id = 2, .master_id = 0x12, .mode = DM_MOTOR_MODE_MIT, .gear_ratio = 1.0f,
+    { .device_id = 2, .master_id = 0x12, .mode = DM_MOTOR_MODE_MIT, .gear_ratio = 0.5f,
       .offline_ms = 100, .velocity_limit_radps = 15.0f, .invert_direction = false },
     /* 关节3 - 肘部俯仰 */
-    { .device_id = 3, .master_id = 0x13, .mode = DM_MOTOR_MODE_MIT, .gear_ratio = 1.0f,
+    { .device_id = 3, .master_id = 0x13, .mode = DM_MOTOR_MODE_MIT, .gear_ratio = 0.5f,
       .offline_ms = 100, .velocity_limit_radps = 15.0f, .invert_direction = false },
     /* 关节4 - 小臂旋转 */
     { .device_id = 4, .master_id = 0x14, .mode = DM_MOTOR_MODE_MIT, .gear_ratio = 1.0f,
-      .offline_ms = 100, .velocity_limit_radps = 15.0f, .invert_direction = false },
+      .offline_ms = 100, .velocity_limit_radps = 15.0f, .invert_direction = true },
     /* 关节5 - 腕部俯仰 */
     { .device_id = 5, .master_id = 0x15, .mode = DM_MOTOR_MODE_MIT, .gear_ratio = 1.0f,
       .offline_ms = 100, .velocity_limit_radps = 15.0f, .invert_direction = false },

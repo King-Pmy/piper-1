@@ -18,7 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
+#include "FreeRTOS.h"
+#include "cmsis_os2.h"
 #include "crc.h"
 #include "dma.h"
 #include "fdcan.h"
@@ -28,9 +29,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "arm_math.h"
-#include "arm_kinematics.h"
-#include "arm_ik.h"
+#include "arm_app.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -57,7 +56,6 @@
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void PeriphCommonClock_Config(void);
 static void MPU_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
@@ -95,9 +93,6 @@ int main(void)
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* Configure the peripherals common clocks */
-  PeriphCommonClock_Config();
-
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
@@ -117,29 +112,29 @@ int main(void)
   MX_UART8_Init();
   /* USER CODE BEGIN 2 */
 
-/* 关节角 -> 位姿 */
-float q_seed[6] = {0.3f, -0.7f, 1.1f, 0.2f, 0.0f, -0.4f};
-ArmPos_t pose;
-Matrix4x4 T_target;
-Arm_ForwardKinematics(q_seed, &pose, &T_target);   /* T_out 不需要就传 NULL */
+///* 关节角 -> 位姿 */
+//float q_seed[6] = {0.3f, -0.7f, 1.1f, 0.2f, 0.0f, -0.4f};
+//ArmPos_t pose;
+//Matrix4x4 T_target;
+//Arm_ForwardKinematics(q_seed, &pose, &T_target);   /* T_out 不需要就传 NULL */
 
-ArmIK_Model ik;
-ArmIK_Init(&ik, arm_params);             /* arm_params 在 arm_kinematics.c */
-ArmIK_SetTool(&ik, 0.0f, 0.0f, 0.0f);
+//ArmIK_Model ik;
+//ArmIK_Init(&ik, arm_params);             /* arm_params 在 arm_kinematics.c */
+//ArmIK_SetTool(&ik, 0.0f, 0.0f, 0.0f);
 
-ArmPos_t target = {
-    .x = 0.25f, .y = 0.0f, .z = 0.35f,
-    .roll = 0.0f, .pitch = 1.5708f, .yaw = 0.0f,
-};
+//ArmPos_t target = {
+//    .x = 0.25f, .y = 0.0f, .z = 0.35f,
+//    .roll = 0.0f, .pitch = 1.5708f, .yaw = 0.0f,
+//};
 
-//float q_seed[6] = {0.3f, -0.7f, 1.1f, 0.2f, 0.5f, -0.4f};
-//float q_min[6]  = {NULL};//{ /* 或者传 NULL */ };
-//float q_max[6]  = {NULL};//{ /* 或者传 NULL */ };
-float q_out[6];
+////float q_seed[6] = {0.3f, -0.7f, 1.1f, 0.2f, 0.5f, -0.4f};
+////float q_min[6]  = {NULL};//{ /* 或者传 NULL */ };
+////float q_max[6]  = {NULL};//{ /* 或者传 NULL */ };
+//float q_out[6];
 
-if (ArmIK_SolvePose(&ik, &pose, q_seed, NULL, NULL, q_out)) {
-    float err = ArmIK_Residual(T_target.data, q_out);
-}
+//if (ArmIK_SolvePose(&ik, &pose, q_seed, NULL, NULL, q_out)) {
+//    float err = ArmIK_Residual(T_target.data, q_out);
+//}
 
   /* USER CODE END 2 */
 
@@ -157,6 +152,7 @@ if (ArmIK_SolvePose(&ik, &pose, q_seed, NULL, NULL, q_out)) {
   while (1)
   {
     /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -191,7 +187,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLM = 5;
   RCC_OscInitStruct.PLL.PLLN = 96;
   RCC_OscInitStruct.PLL.PLLP = 1;
-  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLQ = 5;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
@@ -215,32 +211,6 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-/**
-  * @brief Peripherals Common Clock Configuration
-  * @retval None
-  */
-void PeriphCommonClock_Config(void)
-{
-  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
-
-  /** Initializes the peripherals clock
-  */
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
-  PeriphClkInitStruct.PLL2.PLL2M = 2;
-  PeriphClkInitStruct.PLL2.PLL2N = 16;
-  PeriphClkInitStruct.PLL2.PLL2P = 2;
-  PeriphClkInitStruct.PLL2.PLL2Q = 2;
-  PeriphClkInitStruct.PLL2.PLL2R = 2;
-  PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
-  PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
-  PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
-  PeriphClkInitStruct.FdcanClockSelection = RCC_FDCANCLKSOURCE_PLL2;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }

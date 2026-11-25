@@ -29,7 +29,7 @@ static void ArmMotor_DisableAnyMode(ArmMotorBus_t *bus, const dm_motor_config_t 
         if ((dm_motor_init(&tmp, &mode_cfg) == DM_OK) &&
             (dm_motor_cmd_disable(&tmp, &frame) == DM_OK))
         {
-            (void)ArmMotor_Send(bus->hcan, &frame);
+            (void)ArmMotor_Send(bus->hfdcan, &frame);
         }
     }
 }
@@ -56,7 +56,7 @@ static bool ArmMotor_InitOne(ArmMotorBus_t *bus, uint8_t index)
         return false;
     }
 
-    if (!ArmMotor_Send(bus->hcan, &frame))
+    if (!ArmMotor_Send(bus->hfdcan, &frame))
     {
         return false;
     }
@@ -77,17 +77,17 @@ static bool ArmMotor_InitOne(ArmMotorBus_t *bus, uint8_t index)
  * 初始化 校验-建实例-建master_id-index分发表-启动总线-逐台初始化-失败回滚
  * ---------------------------------------------------------------------- */
 
-bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hcan,
+bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hfdcan,
                       const dm_motor_config_t *cfgs, uint8_t count)
 {
-    if ((bus == NULL) || (hcan == NULL) || (cfgs == NULL) ||
+    if ((bus == NULL) || (hfdcan == NULL) || (cfgs == NULL) ||
         (count == 0U) || (count > ARM_MOTOR_MAX_COUNT))
     {
         return false;//API检查，防joint数越界
     }
 
     *bus       = (ArmMotorBus_t){0};//清零旧配置
-    bus->hcan  = hcan;
+    bus->hfdcan  = hfdcan;
     bus->cfg   = cfgs;
     bus->count = count;
 
@@ -123,13 +123,13 @@ bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hcan,
     }
 
     /* 总线级操作只做一次, 不能放进下面的单台循环. */
-    if (FDCAN_AddFilter(hcan, 0U, FDCAN_FILTER_MASK, 0x000U, 0x000U,
+    if (FDCAN_AddFilter(hfdcan, 0U, FDCAN_FILTER_MASK, 0x000U, 0x000U,
                         FDCAN_FILTER_TO_RXFIFO0) != HAL_OK)
     {
         return false;
     }
 
-    if (FDCAN_BringUp(hcan) != HAL_OK)
+    if (FDCAN_BringUp(hfdcan) != HAL_OK)
     {
         return false;
     }
@@ -236,7 +236,7 @@ bool ArmMotorBus_SetTargetOne(ArmMotorBus_t *bus, uint8_t index,
         return false;
     }
 
-    return ArmMotor_Send(bus->hcan, &frame);
+    return ArmMotor_Send(bus->hfdcan, &frame);
 }
 
 /* -------------------------------------------------------------------------
@@ -257,7 +257,7 @@ bool ArmMotorBus_EnableOne(ArmMotorBus_t *bus, uint8_t index)
         return false;
     }
 
-    if (!ArmMotor_Send(bus->hcan, &frame))
+    if (!ArmMotor_Send(bus->hfdcan, &frame))
     {
         return false;
     }
@@ -280,7 +280,7 @@ bool ArmMotorBus_DisableOne(ArmMotorBus_t *bus, uint8_t index)
         return false;
     }
 
-    if (!ArmMotor_Send(bus->hcan, &frame))
+    if (!ArmMotor_Send(bus->hfdcan, &frame))
     {
         return false;
     }
@@ -323,7 +323,7 @@ bool ArmMotorBus_ClearFaultOne(ArmMotorBus_t *bus, uint8_t index)
         return false;
     }
 
-    if (!ArmMotor_Send(bus->hcan, &frame))
+    if (!ArmMotor_Send(bus->hfdcan, &frame))
     {
         return false;
     }

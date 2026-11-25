@@ -3,10 +3,10 @@
 
 const MHD_Param_t arm_params[6] = {
     /*alpha     a       d        offset    dir*/
-    {0.0f,      0.0f,   0.07f,   0.0f,     1.0f},
+    {0.0f,      0.0f,   0.06f,   0.0f,     1.0f},
     {M_PI/2.0f, 0.0f,   0.0f,    0.0f,     1.0f},
-    {0.0f,     -0.3583f,0.0f,    M_PI/2.0f,1.0f},
-    {M_PI/2.0f, 0.07f,  0.3583f, 0.0f,     1.0f},
+    {0.0f,     -0.240f, 0.0f,    M_PI/2.0f,1.0f},
+    {M_PI/2.0f, 0.07727f,0.2096f,0.0f,     1.0f},
     {-M_PI/2.0f,0.0f,   0.0f,    0.0f,     1.0f},
     {M_PI/2.0f, 0.0f,   0.0f,    0.0f,     1.0f},
 };
@@ -31,11 +31,11 @@ static void MatrixToEulerZYX(const Matrix4x4 *T,float *roll,float *pitch,float *
     }
 }
 
-void Arm_ForwardKinematics(const float q_motor[6],ArmPos_t *pose,Matrix4x4 *T_out){
+void Arm_ForwardKinematics(const float q_link[6],ArmPos_t *pose,Matrix4x4 *T_out){
     Matrix4x4 T_current,T_step;
     Matrix_Indentity4x4(&T_current);
     for(int i = 0;i<6;i++){
-        float theta = q_motor[i] * arm_params[i].dir + arm_params[i].offset;
+        float theta = q_link[i] * arm_params[i].dir + arm_params[i].offset;
 
         float ct = cosf(theta);
         float st = sinf(theta);

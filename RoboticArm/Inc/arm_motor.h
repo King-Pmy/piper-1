@@ -30,15 +30,17 @@ typedef struct
 
 typedef struct
 {
-    FDCAN_HandleTypeDef     *hcan;
+    FDCAN_HandleTypeDef     *hfdcan;
     const dm_motor_config_t *cfg;
     ArmJoint_t               joint[ARM_MOTOR_MAX_COUNT];
     uint8_t                  count;
     int8_t                   rx_index[ARM_MOTOR_RX_INDEX_SIZE];
 } ArmMotorBus_t;
 
+//bool ArmMotor_InitOne(ArmMotorBus_t *bus, uint8_t index);
+
 /* 生命周期 */
-bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hcan,
+bool ArmMotorBus_Init(ArmMotorBus_t *bus, FDCAN_HandleTypeDef *hfdcan,
                       const dm_motor_config_t *cfgs, uint8_t count);
 
 /* 数据面 */
@@ -59,7 +61,7 @@ bool ArmMotorBus_ClearFaultOne(ArmMotorBus_t *bus, uint8_t index);
 
 /* 状态查询 */
 bool ArmMotorBus_IsReady(const ArmMotorBus_t *bus, uint8_t index);
-ArmJointSta  te_t ArmMotorBus_GetState(const ArmMotorBus_t *bus, uint8_t index);
+ArmJointState_t ArmMotorBus_GetState(const ArmMotorBus_t *bus, uint8_t index);
 bool ArmMotorBus_HasFault(const ArmMotorBus_t *bus);
 
 #ifdef __cplusplus
